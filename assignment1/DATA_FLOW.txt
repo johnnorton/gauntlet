@@ -1,0 +1,301 @@
+════════════════════════════════════════════════════════════════════════════════
+RETRIEVAL PROCESS: EXACT DATA FLOW
+════════════════════════════════════════════════════════════════════════════════
+
+INPUT (User Query)
+═════════════════════════════════════════════════════════════════════════════
+"What electrical problems were found on Fords?"
+
+
+STEP 1: EMBED QUERY
+═════════════════════════════════════════════════════════════════════════════
+Function: embed_single_chunk(query)
+Model: sentence-transformers/all-MiniLM-L6-v2
+
+Input:  String of 45 characters
+        "What electrical problems were found on Fords?"
+
+Processing:
+  1. Tokenize: Split into tokens
+  2. Convert: Pass through BERT embedder
+  3. Pool: Mean pooling of token embeddings
+  4. Normalize: L2 normalize to unit vector
+
+Output: Array of 384 floats
+        [-0.0547, 0.0037, 0.0323, 0.0888, 0.0238, 0.005, -0.0471, ..., 0.0057]
+
+
+STEP 2: QUERY CHROMA
+═════════════════════════════════════════════════════════════════════════════
+Function: collection.query()
+Database: 1,564 chunks × 384 dimensions = 600 KB of vectors
+
+Input:  query_embeddings = [[-0.0547, 0.0037, 0.0323, ..., 0.0057]]
+        n_results = 5
+
+Chroma Processing:
+  1. Load all 1,564 chunk embeddings (600 KB)
+  2. Calculate cosine similarity: (chunk_vec · query_vec) / (||chunk_vec|| · ||query_vec||)
+  3. Get 1,564 similarity scores (0.0 - 1.0 scale)
+  4. Sort descending
+  5. Take top 5
+
+Output: results = {
+          'documents': [
+            "Invoice: 26847505\nDate: 1/13/2025\n...",
+            "Invoice: 5010\nDate: 3/15/2024\n...",
+            "Invoice: DET\nDate: 2/5/2025\n...",
+            "Invoice: 101\nDate: 9/25/2019\n...",
+            "Invoice: 1115321\nDate: 12/11/2023\n..."
+          ],
+          'metadatas': [
+            {'invoice_id': '26847505', 'date': '1/13/2025', ...},
+            {'invoice_id': '5010', 'date': '3/15/2024', ...},
+            ...
+          ],
+          'distances': [0.5361, 0.5449, 0.5490, 0.5512, 0.5522]
+        }
+
+
+STEP 3: CONVERT TO SIMILARITY & FORMAT
+═════════════════════════════════════════════════════════════════════════════
+Function: retrieve() in src/retrieve.py
+Conversion: similarity = 1 - distance
+
+Chroma distance → similarity mapping:
+  0.5361 → 0.4639 (most similar)
+  0.5449 → 0.4551
+  0.5490 → 0.4510
+  0.5512 → 0.4488
+  0.5522 → 0.4478 (least similar of top-5)
+
+Output: retrieved_chunks = [
+  {
+    'text': 'Invoice: 26847505\nDate: 1/13/2025\n...',
+    'metadata': {'invoice_id': '26847505', 'date': '1/13/2025', ...},
+    'similarity': 0.4639,
+    'rank': 1
+  },
+  {
+    'text': 'Invoice: 5010\nDate: 3/15/2024\n...',
+    'metadata': {'invoice_id': '5010', 'date': '3/15/2024', ...},
+    'similarity': 0.4551,
+    'rank': 2
+  },
+  ... (3 more chunks)
+]
+
+
+STEP 4: FORMAT FOR CLAUDE
+═════════════════════════════════════════════════════════════════════════════
+Function: generate_answer() in src/generate.py
+
+Input: query, retrieved_chunks
+
+Processing:
+  1. Extract text from chunks:
+     texts = [
+       "Invoice: 26847505\nDate: ...",
+       "Invoice: 5010\nDate: ...",
+       "Invoice: DET\nDate: ...",
+       "Invoice: 101\nDate: ...",
+       "Invoice: 1115321\nDate: ..."
+     ]
+
+  2. Join with separator:
+     context = "Invoice: 26847505\n...\n\n---\n\nInvoice: 5010\n...\n\n---\n\n..."
+     (Total: 6,258 characters)
+
+  3. Create system prompt (73 words):
+     "You are a helpful assistant that answers questions about truck service..."
+
+  4. Create user prompt:
+     user_prompt = f"""Based on the following invoice context, answer
+     this question: What electrical problems were found on Fords?
+
+     INVOICE CONTEXT:
+     {context}
+
+     Please provide a clear, concise answer based only on the
+     information above."""
+
+     (Total: ~6,300 characters)
+
+Output: Structured JSON
+  {
+    "model": "claude-sonnet-4-20250514",
+    "max_tokens": 1024,
+    "system": "You are a helpful assistant...",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Based on the following invoice context..."
+      }
+    ]
+  }
+
+
+STEP 5: SEND TO CLAUDE API
+═════════════════════════════════════════════════════════════════════════════
+Network Call: claude.anthropic.com/v1/messages
+
+Payload Size: ~6 KB
+Request Time: ~50-100 ms (network latency)
+Claude Processing Time: ~500-1000 ms (generation)
+Response Time: ~50-100 ms (network latency)
+
+Total: ~600-1200 ms
+
+What Claude Receives:
+  ├─ Model name: "claude-sonnet-4-20250514"
+  ├─ System prompt: Instructions on how to behave
+  ├─ User message: Question + 5 invoice chunks as context
+  ├─ Max tokens: 1024 (max response length)
+  └─ Temperature: Default (not specified, so ~1.0)
+
+What Claude Does:
+  1. Parses system prompt → "Answer only from context"
+  2. Reads user prompt → "What electrical problems on Fords?"
+  3. Reads context → 5 invoice chunks
+  4. Finds mentions of electrical problems on Fords
+  5. Formats answer
+  6. Returns response
+
+
+STEP 6: CLAUDE'S RESPONSE
+═════════════════════════════════════════════════════════════════════════════
+Claude returns:
+
+response = {
+  "content": [
+    {
+      "type": "text",
+      "text": "Based on the provided invoices, electrical problems found on Fords
+              include:
+
+              1. Charging system light/Alternator communication faults
+                 (Invoice 26847505) - Resolved by thawing ice buildup
+                 on active grill shutter
+
+              2. Electrical system wiring damage behind left midturn
+                 (Invoice DET) - Repaired using heat shrink connectors
+
+              3. ABS wiring problems (Invoice 1115321) - Passenger side
+                 wheel speed sensor wiring issues"
+    }
+  ],
+  "usage": {
+    "input_tokens": 1247,
+    "output_tokens": 89
+  }
+}
+
+
+STEP 7: FORMAT & RETURN TO USER
+═════════════════════════════════════════════════════════════════════════════
+Function: pipeline.py combines retrieve() + generate_answer()
+
+Processing:
+  1. Extract answer text from Claude response
+  2. Extract source invoice IDs from metadata:
+     source_invoices = [26847505, 5010, DET, 101, 1115321]
+
+  3. Combine into final result:
+     {
+       "answer": "Based on the provided invoices, electrical problems...",
+       "sources": [26847505, 5010, DET, 101, 1115321],
+       "num_sources": 5,
+       "processing_time_ms": 847
+     }
+
+
+OUTPUT (User Receives)
+═════════════════════════════════════════════════════════════════════════════
+User sees:
+
+Question: "What electrical problems were found on Fords?"
+
+Answer: "Based on the provided invoices, electrical problems found on Fords
+         include:
+
+         1. Charging system light/Alternator communication faults
+            (Invoice 26847505) - Resolved by thawing ice buildup
+
+         2. Electrical system wiring damage behind left midturn
+            (Invoice DET) - Repaired using heat shrink connectors
+
+         3. ABS wiring problems (Invoice 1115321) - Passenger side
+            wheel speed sensor wiring issues"
+
+Sources: Invoices [26847505, 5010, DET, 101, 1115321]
+
+Time: ~0.85 seconds
+
+
+════════════════════════════════════════════════════════════════════════════════
+SUMMARY: WHAT EACH STEP TRANSFORMS
+════════════════════════════════════════════════════════════════════════════════
+
+Raw Query
+    ↓
+    STRING (45 chars)
+    "What electrical problems were found on Fords?"
+    ↓
+
+Embed Query
+    ↓
+    VECTOR (384 floats)
+    [-0.0547, 0.0037, 0.0323, ..., 0.0057]
+    ↓
+
+Search Chroma
+    ↓
+    5 CHUNKS (with similarity scores)
+    [chunk_1: 0.4639, chunk_2: 0.4551, ...]
+    ↓
+
+Format for Claude
+    ↓
+    PROMPT (6,300 chars)
+    "System: You are a helpful assistant...
+     User: Based on the following invoice context...
+
+     INVOICE CONTEXT:
+     [5 chunks joined with --- separator]"
+    ↓
+
+Send to Claude
+    ↓
+    API REQUEST (6 KB JSON)
+    model: claude-sonnet-4-20250514
+    ↓
+
+Claude Processes
+    ↓
+    API RESPONSE (answer + metadata)
+    ↓
+
+Extract & Return
+    ↓
+    FINAL RESULT
+    answer: "Based on invoices, electrical problems..."
+    sources: [26847505, 5010, DET, ...]
+
+
+════════════════════════════════════════════════════════════════════════════════
+KEY INSIGHT: WHY THIS IS CALLED "RETRIEVAL-AUGMENTED GENERATION"
+════════════════════════════════════════════════════════════════════════════════
+
+RETRIEVAL:      Find relevant chunks from database
+  (2 functions: embed() + retrieve())
+
+AUGMENTATION:   Add those chunks to Claude's context
+  (Part of: generate() function)
+
+GENERATION:     Claude generates answer based on that context
+  (Part of: generate() function)
+
+Together: RAG = Claude's knowledge + Your document knowledge + Real facts!
+
+Without retrieval: Claude hallucinates ("I don't actually know...")
+With retrieval: Claude cites facts ("According to Invoice 26847505...")

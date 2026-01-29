@@ -1,0 +1,62 @@
+[
+  {
+    "query": "What jobs involved oil pressure problems?",
+    "expected_invoice_ids": []
+  },
+  {
+    "query": "Battery replacements on International trucks",
+    "expected_invoice_ids": []
+  },
+  {
+    "query": "What repairs were done for customers complaining about warning lights?",
+    "expected_invoice_ids": []
+  },
+  {
+    "query": "Jobs involving brake repairs",
+    "expected_invoice_ids": []
+  },
+  {
+    "query": "Transmission problems",
+    "expected_invoice_ids": []
+  },
+  {
+    "query": "What were the most common complaints?",
+    "expected_invoice_ids": []
+  },
+  {
+    "query": "Which invoices involved electrical issues?",
+    "expected_invoice_ids": []
+  },
+  {
+    "query": "What service work was done on Volvo vehicles?",
+    "expected_invoice_ids": []
+  },
+  {
+    "query": "List all repairs that took more than 5 hours of labor",
+    "expected_invoice_ids": []
+  },
+  {
+    "query": "What parts were commonly replaced?",
+    "expected_invoice_ids": []
+  },
+  {
+    "query": "Which jobs involved multiple service blocks in a single invoice?",
+    "expected_invoice_ids": []
+  },
+  {
+    "query": "Fuel system repairs",
+    "expected_invoice_ids": []
+  },
+  {
+    "query": "What were the complaints about starting issues?",
+    "expected_invoice_ids": []
+  },
+  {
+    "query": "Cooling system repairs",
+    "expected_invoice_ids": []
+  },
+  {
+    "query": "Which customers had multiple invoices?",
+    "expected_invoice_ids": []
+  }
+]

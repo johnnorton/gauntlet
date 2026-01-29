@@ -1,0 +1,7 @@
+anthropic
+chromadb
+pdfplumber
+python-dotenv
+tqdm
+pydantic-settings
+sentence-transformers
