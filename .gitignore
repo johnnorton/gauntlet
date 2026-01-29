@@ -44,3 +44,11 @@ Thumbs.db
 *.pdf
 *.zip
 assignment1/data/
+
+# Assignment files
+ASSIGNMENT_CHECKLIST.md
+CLAUDE_CODE_PROMPT.md
+DEMO_INSTRUCTIONS.md
+NARRATION_GUIDE.txt
+README_VIDEO_DEMO.md
+VIDEO_RECORDING_SETUP.md
